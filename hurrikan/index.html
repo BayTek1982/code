@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hurrikan Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: full-screen 3D stage, broadcast overlay in the corners, camera strip along the bottom. Single dark theme by choice. */
+:root{
+  color-scheme:dark;
+  --ink:#f0f3f5;
+  --ink-dim:#b3bcc4;
+  --panel:rgba(8,14,20,.62);
+  --line:rgba(240,243,245,.2);
+  --accent:#3fc1d9;
+  --warn:#ffb13d;
+  --deep:#05090e;
+  --display:"Saira Condensed","Arial Narrow",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--deep);color:var(--ink);font-family:var(--mono);font-size:13px;overflow:hidden}
+canvas#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+canvas#stage:active{cursor:grabbing}
+.hud{position:fixed;pointer-events:none;z-index:2}
+.hud>*{pointer-events:auto}
+#tl{top:14px;left:16px;display:flex;flex-direction:column;gap:5px;max-width:62vw}
+.live{display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.08em;color:var(--ink-dim);text-shadow:0 1px 5px #000}
+.dot{width:9px;height:9px;border-radius:50%;background:#ff3b2f;animation:blink 1.2s steps(2) infinite}
+@keyframes blink{50%{opacity:.25}}
+#big{font-family:var(--display);font-weight:700;font-size:clamp(30px,5.5vw,52px);line-height:.95;letter-spacing:.02em;text-transform:uppercase;text-shadow:0 2px 14px rgba(0,0,0,.8)}
+#phase{font-family:var(--display);font-weight:500;font-size:clamp(17px,2.8vw,24px);line-height:1.05;letter-spacing:.03em;text-shadow:0 2px 10px rgba(0,0,0,.85);text-wrap:balance}
+#scale{display:flex;gap:4px;margin-top:2px;align-items:center}
+#scale span{font-size:11px;padding:2px 7px;border:1px solid var(--line);border-radius:3px;color:var(--ink-dim);background:var(--panel);font-variant-numeric:tabular-nums}
+#scale span.on{color:#1a1002;background:var(--warn);border-color:var(--warn);font-weight:500}
+#tr{top:14px;right:16px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px;backdrop-filter:blur(6px);min-width:205px}
+#tr dl{margin:0;display:grid;grid-template-columns:auto auto;gap:3px 14px;font-variant-numeric:tabular-nums}
+#tr dt{color:var(--ink-dim)}
+#tr dd{margin:0;text-align:right}
+#bottom{left:0;right:0;bottom:0;padding:10px 16px 14px;display:flex;flex-direction:column;gap:8px;background:linear-gradient(to top,rgba(3,6,10,.85),rgba(3,6,10,0))}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{font-family:var(--display);font-weight:500;font-size:16px;letter-spacing:.03em;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 11px;cursor:pointer;backdrop-filter:blur(6px);white-space:nowrap}
+button:hover{border-color:var(--accent)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#04141a;font-weight:700}
+button.go{background:#0e5d70;border-color:var(--accent);font-weight:700}
+button kbd{font-family:var(--mono);font-size:11px;opacity:.65;margin-right:5px}
+label.sl{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--ink-dim)}
+label.sl output{color:var(--ink);min-width:9ch;text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100px;accent-color:var(--accent)}
+#hint{color:var(--ink-dim);font-size:11.5px;margin-left:auto}
+#err{position:fixed;inset:0;display:none;place-items:center;padding:24px;text-align:center;z-index:5;background:var(--deep)}
+@media (max-width:700px){
+  #tr{min-width:0;font-size:11px;padding:6px 8px}
+  button{font-size:14px;padding:5px 8px}
+  button kbd{display:none}
+  #hint{display:none}
+  #scale span{padding:1px 5px}
+}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div class="hud" id="tl">
+  <div class="live"><span class="dot"></span><span id="camlabel">CAM 1 · SATELLIT</span></div>
+  <div id="big">Kategorie 5</div>
+  <div id="phase">Über dem Meer</div>
+  <div id="scale" aria-label="Saffir-Simpson-Skala"></div>
+</div>
+
+<div class="hud" id="tr">
+  <dl>
+    <dt>Spitzenwind</dt><dd id="t-vmax">0 km/h</dd>
+    <dt>Kerndruck</dt><dd id="t-pc">0 hPa</dd>
+    <dt>Wind hier</dt><dd id="t-v">0 km/h</dd>
+    <dt>Druck hier</dt><dd id="t-p">0 hPa</dd>
+    <dt>Zum Auge</dt><dd id="t-r">0 km</dd>
+  </dl>
+</div>
+
+<div class="hud" id="bottom">
+  <div class="row">
+    <button class="go" id="b-go"><kbd>Leer</kbd>Neuer Sturm</button>
+    <label class="sl" for="s-spd">Zeitraffer<input type="range" id="s-spd" min="0" max="5" step="1" value="3"><output id="o-spd">6 min/s</output></label>
+    <button id="b-snd" aria-pressed="false">Ton an</button>
+    <span id="hint">Ziehen: umsehen · Scrollen: zoomen</span>
+  </div>
+  <div class="row" id="cams">
+    <button id="b-regie" aria-pressed="true"><kbd>R</kbd>Regie</button>
+  </div>
+</div>
+
+<div id="err">Dein Browser unterstützt kein WebGL. Öffne die Seite in einem aktuellen Browser.</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+if(!window.THREE){document.getElementById('err').style.display='grid';return;}
+const $=id=>document.getElementById(id);
+const canvas=$('stage');
+let renderer;
+try{renderer=new THREE.WebGLRenderer({canvas,antialias:false,powerPreference:'high-performance'});}
+catch(e){$('err').style.display='grid';return;}
+const small=matchMedia('(max-width:700px)').matches;
+const calm=matchMedia('(prefers-reduced-motion:reduce)').matches;
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,small?.8:1)); // the cloud ray-march is the cost; keep the pixel count modest
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(55,1,.2,9000);scene.add(camera);
+const V=(x,y,z)=>new THREE.Vector3(x,y,z);
+const rnd=(a=1,b)=>b===undefined?Math.random()*a:a+Math.random()*(b-a);
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const sat=x=>clamp(x,0,1);
+const sstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
+const mix=(a,b,t)=>a+(b-a)*t;
+
+/* ---------- storm model (km, minutes). x east, z south, coast at x = 0 ---------- */
+const EYE=16,RM=30,VMAX=72,START=-330,END=210;
+const storm={x:START,z:0,min:0,I:1};
+const windProfile=r=>r<RM?Math.pow(r/RM,2.6):Math.pow(RM/r,.62);
+const windAt=r=>VMAX*storm.I*windProfile(Math.max(r,.01));                    // m/s
+const pressAt=r=>1010-95*storm.I*(1-Math.exp(-Math.pow(RM/Math.max(r,1),1.25)));  // hPa
+function coverAt(x,z){ // cloud and rain cover without the fine noise, mirrors the shader
+  const qx=x-storm.x,qz=z-storm.z,r=Math.hypot(qx,qz),sp=storm.min*Math.PI*2/240,c=Math.cos(sp),s=Math.sin(sp);
+  const th=Math.atan2(qx*s+qz*c,qx*c-qz*s),lr=Math.log(Math.max(r,4)*.05);
+  const b1=sstep(-.1,.7,Math.sin(2*th-5.2*lr))*Math.exp(-r/480)*sstep(30,110,r);
+  const b2=.8*sstep(.1,.85,Math.sin(3*th-7.5*lr+1.7))*Math.exp(-r/360)*sstep(80,170,r);
+  const cdo=sstep(200,75,r),eyeCut=mix(1,sstep(EYE-2,EYE+6,r),sstep(.45,.8,storm.I)),wall=sstep(EYE+34,EYE+6,r);
+  return{r,c:Math.max(cdo,b1,b2)*mix(.6,1,storm.I)*eyeCut,wall:wall*eyeCut};
+}
+const category=v=>{const k=v*3.6;return k>=252?5:k>=209?4:k>=178?3:k>=154?2:k>=119?1:0;};
+
+/* ---------- sky, sea and clouds: one ray-marched full-screen pass (km) ---------- */
+const sunDir=V(.45,.75,.3).normalize();
+const noiseTex=(function(){const S=256,d=new Uint8Array(S*S*4),r=new Uint8Array(S*S);
+  for(let i=0;i<S*S;i++)r[i]=Math.random()*256;
+  for(let y=0;y<S;y++)for(let x=0;x<S;x++){const k=(y*S+x)*4;d[k]=r[y*S+x];d[k+1]=r[((y-17+S)%S)*S+((x-37+S)%S)];d[k+2]=0;d[k+3]=255;}
+  const t=new THREE.DataTexture(d,S,S,THREE.RGBAFormat);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=t.minFilter=THREE.LinearFilter;t.needsUpdate=true;return t;})();
+const U={uCam:{value:V()},uRot:{value:new THREE.Matrix3()},uTan:{value:1},uAspect:{value:1},uSun:{value:sunDir},uStorm:{value:new THREE.Vector2()},
+  uSpin:{value:0},uInt:{value:1},uTime:{value:0},uRain:{value:0},uNoise:{value:noiseTex},uDrift:{value:0},uLight:{value:1}};
+const sky=new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.ShaderMaterial({depthTest:false,depthWrite:false,uniforms:U,
+  vertexShader:`uniform mat3 uRot;uniform float uTan,uAspect;varying vec3 vRay;
+    void main(){vRay=uRot*vec3(position.x*uTan*uAspect,position.y*uTan,-1.);gl_Position=vec4(position.xy,1.,1.);}`,
+  fragmentShader:`precision highp float;
+    uniform vec3 uCam,uSun;uniform vec2 uStorm;uniform float uSpin,uInt,uTime,uRain,uDrift,uLight;uniform sampler2D uNoise;varying vec3 vRay;
+    const float R=6371.,H=8.5,K=42.,TOP=17.,EYE=${EYE.toFixed(1)},SIG=.85;const vec3 BETA=vec3(.0058,.0135,.0331);
+    float n3(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);vec2 uv=(i.xy+vec2(37.,17.)*i.z)+f.xy;
+      vec2 rg=texture2D(uNoise,(uv+.5)/256.).yx;return mix(rg.x,rg.y,f.z);}
+    float fbm(vec3 p){return n3(p)*.55+n3(p*2.07+3.1)*.28+n3(p*4.3+7.7)*.17;}
+    float wind(float r){return r<${RM.toFixed(1)}?pow(r/${RM.toFixed(1)},2.6):pow(${RM.toFixed(1)}/r,.62);}
+    float coastX(float z){return 14.*sin(z*.011)+9.*(sin(z*.031+1.)-.8415);}
+    float dens(vec3 p,float a,bool hi){
+      if(a<.3||a>TOP)return 0.;
+      vec2 q0=p.xz-uStorm;float cs=cos(uSpin),sn=sin(uSpin);vec2 q=vec2(q0.x*cs-q0.y*sn,q0.x*sn+q0.y*cs);
+      float r=length(q),th=atan(q.y,q.x),lr=log(max(r,4.)*.05);
+      float bands=max(smoothstep(-.1,.7,sin(2.*th-5.2*lr))*exp(-r/480.)*smoothstep(30.,110.,r),
+                      .8*smoothstep(.1,.85,sin(3.*th-7.5*lr+1.7))*exp(-r/360.)*smoothstep(80.,170.,r));
+      float c=max(smoothstep(200.,75.,r),bands)*mix(.6,1.,uInt);
+      float eyeR=EYE+a*.75,eyeCut=mix(1.,smoothstep(eyeR-2.,eyeR+6.,r),smoothstep(.45,.8,uInt));
+      float top=5.5+10.5*smoothstep(300.,45.,r),wall=smoothstep(eyeR+34.,eyeR+6.,r);
+      vec3 np=vec3(q.x,a*2.2,q.y)*.055+vec3(0.,uDrift,0.);
+      float n=hi?fbm(np):n3(np)*.8+.1;
+      top+=(n-.5)*7.*(1.-wall*.6);
+      float d=clamp((c+wall*.45)*1.9-.55-(1.-n)*1.3,0.,1.)*smoothstep(.5,1.7,a)*smoothstep(top,top-3.,a);
+      d=max(d,smoothstep(290.,140.,r)*smoothstep(10.5,12.,a)*smoothstep(14.6,13.,a)*(.45+.55*n)*.4)*eyeCut; // outflow canopy
+      if(a<3.2&&hi&&uCam.y<25.){float cu=smoothstep(.62,.8,n3(np*5.+11.))*smoothstep(.9,1.4,a)*smoothstep(3.2,2.3,a)*(1.-c)*smoothstep(8.,40.,r)*.7;d=max(d,cu);} // fair-weather cumulus
+      return d;}
+    float alt(vec3 p){return p.y+dot(p.xz,p.xz)/(2.*R);}
+    vec3 skyC(vec3 d,float h0,float Bq,float A){float am,hE=h0;
+      if(Bq>=0.)am=exp(-h0/H)/(Bq+.03);
+      else{float hp=max(h0-Bq*Bq/(4.*max(A,1e-9)),0.);hE=min(hp,h0);am=exp(-hE/H)*33.*(1.+clamp(-Bq/(2.*max(A,1e-9))/330.,0.,1.));}
+      vec3 c=(1.-exp(-BETA*K*am))*vec3(.9,1.,1.25)*vec3(.97,.94,.88);
+      float sd=max(dot(d,uSun),0.);
+      return c+vec3(1.,.95,.85)*(pow(sd,300.)*.5+pow(sd,24.)*.1+smoothstep(.99992,.99997,sd)*6.);}
+    void main(){
+      vec3 d=normalize(vRay),o=uCam;
+      float A=(d.x*d.x+d.z*d.z)/(2.*R),Bq=d.y+(o.x*d.x+o.z*d.z)/R,h0=alt(o);
+      float tSea=-1.,t0=0.,t1=-1.;
+      // sea level and cloud-top crossings of altitude(t) = h0 + Bq t + A t^2
+      if(A<1e-8){if(Bq<0.){tSea=-h0/Bq;t0=max((TOP-h0)/Bq,0.);t1=tSea;}else if(h0<TOP){t1=(TOP-h0)/Bq;}}
+      else{float ds=Bq*Bq-4.*A*h0;if(ds>0.&&Bq<0.)tSea=2.*h0/(-Bq+sqrt(ds));
+        float dt=Bq*Bq-4.*A*(h0-TOP);
+        if(dt>0.){float s=sqrt(dt),ta=(-Bq-s)/(2.*A),tb=(-Bq+s)/(2.*A);if(h0>TOP){if(ta>0.){t0=ta;t1=tb;}}else t1=tb;}
+        if(tSea>0.&&t1>0.)t1=min(t1,tSea);}
+      vec3 skyc=skyC(d,h0,Bq,A);
+      float inAir=exp(-max(h0,0.)/10.);
+      vec3 haze=vec3(.66,.76,.9);
+      // background: sea, land or sky
+      vec3 bg;
+      if(tSea>0.){vec3 p=o+d*tSea;vec2 q=p.xz-uStorm;float r=length(q),v=wind(r)*uInt;
+        float fine=1./(1.+tSea*.03),farf=smoothstep(700.,80.,tSea);
+        float w1=n3(vec3(p.xz*1.3+uTime*.05,uTime*.03)),w2=n3(vec3(p.xz*14.,uTime*.3));
+        vec3 n=normalize(vec3((w1-.5)*.5*farf+(w2-.5)*.6*fine,1.,(w2-.5)*.5*fine+(w1-.5)*.4*farf));
+        vec3 sea=mix(vec3(.02,.10,.21),vec3(.09,.17,.20),clamp(v*1.1,0.,1.));
+        float fr=pow(1.-max(dot(n,-d),0.),4.);sea=mix(sea,vec3(.55,.68,.85),fr*.55);
+        sea+=vec3(1.,.95,.85)*pow(max(dot(reflect(d,n),uSun),0.),70.)*.55;
+        float foam=smoothstep(.92-.5*clamp(v,0.,1.),1.,n3(vec3(p.xz*3.,1.))*.6+w2*.4*fine+.2*(1.-fine));
+        sea=mix(sea,vec3(.85,.9,.92),foam*.8*farf+(1.-farf)*.25*clamp(v,0.,1.));
+        float cx=coastX(p.z);
+        float ln=fbm(vec3(p.xz*.06,2.));
+        vec3 land=mix(vec3(.15,.24,.10),vec3(.36,.33,.21),smoothstep(.35,.7,ln));
+        land=mix(vec3(.72,.66,.5),land,smoothstep(0.,1.2,p.x-cx));
+        bg=mix(sea,land,smoothstep(-.05,.05,p.x-cx));
+        float l=0.;for(int k=0;k<4;k++){vec3 s=p+uSun*(1.2+3.8*float(k));l+=dens(s,alt(s),false);}
+        bg*=.22+.78*exp(-l*1.6);
+        bg=mix(bg,haze,(1.-exp(-tSea*.006))*inAir);
+        bg=mix(bg,vec3(.5,.62,.85),.1*(1.-inAir));
+      }else bg=skyc;
+      // clouds
+      vec3 sum=vec3(0.);float T=1.;
+      if(t1>t0){t1=min(t1,t0+420.);
+        float t=t0+fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)*.3;
+        for(int i=0;i<72;i++){if(t>t1||T<.03)break;
+          float st=max(.3+.034*(t-t0),t*.0007);
+          vec3 p=o+d*t;float a=alt(p),dn=dens(p,a,true);
+          if(dn>.002){float l=0.;for(int k=0;k<3;k++){vec3 s=p+uSun*(.7+1.7*float(k));l+=dens(s,alt(s),false);}
+            vec3 lc=vec3(1.12,1.07,1.)*exp(-l*1.25)+vec3(.40,.47,.58)*(.3+.7*clamp(a/14.,0.,1.));
+            lc=mix(lc,haze,(1.-exp(-t*.004))*inAir);
+            float al=1.-exp(-dn*SIG*st);sum+=T*al*lc;T*=1.-al;}
+          t+=st;}}
+      vec3 col=sum+T*bg;
+      float rf=1.-exp(-uRain*min(tSea>0.?tSea:45.,45.));
+      col=mix(col,vec3(.66,.70,.74)*uLight,rf);
+      gl_FragColor=vec4(col,1.);}`}));
+sky.frustumCulled=false;sky.renderOrder=-100;scene.add(sky);
+
+/* ---------- coast scene (metres, origin on the shoreline) ---------- */
+const coast=new THREE.Group();scene.add(coast);
+const amb=new THREE.AmbientLight(0xcfd8e4,.6),sunL=new THREE.DirectionalLight(0xfff2de,.9);sunL.position.copy(sunDir);scene.add(amb,sunL);
+scene.fog=new THREE.FogExp2(0x8a949c,.0004);
+const WATER={uTime:{value:0},uAmp:{value:.4},uLevel:{value:0},uFogC:{value:new THREE.Color()},uFogD:{value:.0004},uLight:{value:1},uWind:{value:new THREE.Vector2()}};
+const palms=[];
+(function(){
+  const L=o=>new THREE.MeshLambertMaterial(o);
+  // ground: seabed, beach, promenade, road, land
+  const xs=[-700,-60,-6,0,6,14,3000],ys=[-7,-3,2.3,2.9,2.9,2.8,3.2],cs=[[.5,.45,.33],[.62,.56,.42],[.78,.72,.56],[.62,.62,.6],[.2,.2,.21],[.2,.2,.21],[.2,.3,.14]];
+  const pos=[],col=[],idx=[];xs.forEach((x,i)=>{for(const z of[-3000,3000]){pos.push(x,ys[i],z);col.push(...cs[i]);}});
+  for(let i=0;i<xs.length-1;i++){const a=i*2;idx.push(a,a+1,a+2,a+1,a+3,a+2);}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));g.setIndex(idx);g.computeVertexNormals();
+  coast.add(new THREE.Mesh(g,L({vertexColors:true})));
+  const box=(w,h,d,c,x,y,z)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),L({color:c}));m.position.set(x,y,z);coast.add(m);return m;};
+  // the hotel you stand on, its balcony and railing
+  box(22,13,18,0xd9d2c4,37,9.3,0);box(4.6,.3,7,0xbfb8aa,23.6,13.4,0);box(.08,.08,7,0x30343a,21.4,14.45,0);
+  for(let z=-3.4;z<=3.4;z+=.68)box(.05,1,.05,0x30343a,21.4,13.95,z);
+  for(let i=0;i<14;i++){const z=(i-7)*34+(i>6?30:-6),h=rnd(5,11),w=rnd(10,16);if(Math.abs(z)<18)continue;
+    box(w,h,rnd(12,20),[0xe2d8c8,0xcfc3b0,0xb8c4c8,0xe8e2d6][i%4],26+w/2+rnd(6),2.9+h/2,z);box(w+1.2,.8,18,0x7c4a3a,26+w/2+3,2.9+h+.4,z);}
+  // palms along the promenade
+  const trunkG=new THREE.CylinderGeometry(.13,.17,1.7,7).translate(0,.85,0),trunkM=L({color:0x6b5a44});
+  const frondG=new THREE.PlaneGeometry(.8,3.6,1,4).rotateX(-Math.PI/2).translate(0,0,1.8),frondM=L({color:0x2f6a2c,side:THREE.DoubleSide});
+  for(let i=-9;i<=9;i++){const root=new THREE.Group();root.position.set(2.5+rnd(-.6,.6),2.9,i*13+rnd(-3,3)+5);coast.add(root);
+    const segs=[];let parent=root;for(let k=0;k<5;k++){const s=new THREE.Group();s.position.y=k?1.7:0;s.add(new THREE.Mesh(trunkG,trunkM));parent.add(s);parent=s;segs.push(s);}
+    const crown=new THREE.Group();crown.position.y=1.7;parent.add(crown);const fronds=[];
+    for(let k=0;k<9;k++){const f=new THREE.Mesh(frondG,frondM),az=k/9*Math.PI*2+rnd(.3);crown.add(f);fronds.push({f,dir:V(Math.cos(az),rnd(-.5,.25),Math.sin(az)).normalize(),ph:rnd(6)});}
+    palms.push({segs,fronds,ph:rnd(6),stiff:rnd(.8,1.2)});}
+  // near sea: polar grid, fine at the shoreline
+  const NR=90,NS=110,RMAX=3200,wp=[],wi=[];
+  for(let i=0;i<=NR;i++){const r=RMAX*Math.pow(i/NR,2.3);for(let j=0;j<=NS;j++){const a=j/NS*Math.PI*2;wp.push(-40+Math.cos(a)*r,0,25+Math.sin(a)*r);}}
+  for(let i=0;i<NR;i++)for(let j=0;j<NS;j++){const a=i*(NS+1)+j,b=a+NS+1;wi.push(a,b,a+1,b,b+1,a+1);}
+  const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute(wp,3));wg.setIndex(wi);
+  const water=new THREE.Mesh(wg,new THREE.ShaderMaterial({transparent:true,side:THREE.DoubleSide,uniforms:WATER,extensions:{derivatives:true},
+    vertexShader:`uniform float uTime,uAmp,uLevel;uniform vec2 uWind;varying vec3 vW;varying float vH,vDist;
+      void main(){vec3 p=position;float sh=smoothstep(-200.,-10.,p.x); // waves steepen towards the shore
+        float h=sin(p.x*.045-uTime*1.1+p.z*.008)*.55+sin(p.x*.09-uTime*1.6-p.z*.03)*.3+sin(dot(p.xz,uWind)*.16-uTime*2.3)*.22;
+        p.y=uLevel+h*uAmp*(.6+.7*sh);vH=h;vW=p;vec4 mv=modelViewMatrix*vec4(p,1.);vDist=length(mv.xyz);gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`precision highp float;uniform float uTime,uAmp,uLight,uFogD,uLevel;uniform vec3 uFogC;varying vec3 vW;varying float vH,vDist;
+      float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+      float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+      void main(){vec3 n=normalize(cross(dFdx(vW),dFdy(vW)));if(n.y<0.)n=-n;
+        vec3 v=normalize(cameraPosition-vW);float fr=pow(1.-max(dot(n,v),0.),3.);
+        vec3 c=mix(vec3(.05,.13,.16),vec3(.16,.26,.27),clamp(vH*.5+.5,0.,1.));
+        c=mix(c,vec3(.62,.7,.78),fr*.6);
+        float nz=vn(vW.xz*.35+uTime*.4)*.6+vn(vW.xz*1.7-uTime*.9)*.4;
+        float foam=smoothstep(.75-.45*clamp(uAmp/3.,0.,1.),1.,nz+vH*.35);
+        float depth=uLevel-(-3.+max(vW.x+60.,0.)*.098);
+        foam=max(foam,smoothstep(1.4,.2,depth)*smoothstep(.2,.6,nz+.3*sin(vW.x*.5-uTime*2.)));
+        c=mix(c,vec3(.9,.93,.95),foam)*uLight;
+        float f=1.-exp(-pow(vDist*uFogD,2.));
+        float a=1.-smoothstep(2300.,3100.,length(vW.xz-vec2(-40.,25.)));
+        gl_FragColor=vec4(mix(c,uFogC,f),a);}`}));
+  water.frustumCulled=false;water.renderOrder=2;coast.add(water);
+})();
+
+/* ---------- rain streaks around the camera ---------- */
+const RN=small?800:1500,RB=14,rBase=new Float32Array(RN*3),rPos=new Float32Array(RN*6);
+for(let i=0;i<RN*3;i++)rBase[i]=rnd(-RB,RB);
+const rainGeo=new THREE.BufferGeometry();rainGeo.setAttribute('position',new THREE.BufferAttribute(rPos,3));
+const rain=new THREE.LineSegments(rainGeo,new THREE.LineBasicMaterial({color:0xd5dde4,transparent:true,opacity:0,depthWrite:false,fog:false}));rain.frustumCulled=false;rain.renderOrder=5;scene.add(rain);
+function updateRain(dt,vx,vy,vz,amount){
+  rain.visible=amount>.02;if(!rain.visible)return;rain.material.opacity=Math.min(.5,amount*.5);
+  const sp=Math.hypot(vx,vy,vz),k=Math.min(.035,2.2/Math.max(sp,1)),n=Math.round(RN*Math.min(1,amount*1.3));rainGeo.setDrawRange(0,n*2);
+  for(let i=0;i<n;i++){const b=i*3,p=i*6;let x=rBase[b]+vx*dt,y=rBase[b+1]+vy*dt,z=rBase[b+2]+vz*dt;
+    x=((x+RB)%(2*RB)+2*RB)%(2*RB)-RB;y=((y+RB)%(2*RB)+2*RB)%(2*RB)-RB;z=((z+RB)%(2*RB)+2*RB)%(2*RB)-RB;
+    rBase[b]=x;rBase[b+1]=y;rBase[b+2]=z;rPos[p]=x;rPos[p+1]=y;rPos[p+2]=z;rPos[p+3]=x-vx*k;rPos[p+4]=y-vy*k;rPos[p+5]=z-vz*k;}
+  rainGeo.attributes.position.needsUpdate=true;
+}
+
+/* ---------- aircraft wing for the hurricane hunter ---------- */
+const wing=new THREE.Group();camera.add(wing);
+(function(){const m=new THREE.MeshLambertMaterial({color:0xb9c0c6,fog:false}),d=new THREE.MeshLambertMaterial({color:0x3a4046,fog:false});
+  const w=new THREE.Mesh(new THREE.BoxGeometry(15,.28,2.8),m);w.position.set(9.2,-1.9,-5.2);w.rotation.set(0,.22,.05);wing.add(w);
+  const n=new THREE.Mesh(new THREE.CylinderGeometry(.55,.45,3.6,12).rotateX(Math.PI/2),d);n.position.set(6.2,-2.25,-6.6);wing.add(n);
+  const p=new THREE.Mesh(new THREE.CircleGeometry(1.9,24),new THREE.MeshBasicMaterial({color:0x9aa3aa,transparent:true,opacity:.16,side:THREE.DoubleSide,fog:false}));p.position.set(6.2,-2.25,-8.5);wing.add(p);})();
+
+/* ---------- cameras ---------- */
+let wall=0,camT=0,cam=0,regie=true,regT=0,yaw=0,pitch=0,zoom=1,speed=6,autoSpeed=true;
+const camKm=V(),tgt=V(),upV=V(),Y=V(0,1,0),NORTH=V(0,0,-1);
+const HA=-.9,hunterDir=V(Math.cos(HA),0,Math.sin(HA));
+const CAMS=[
+  {name:'Satellit',fov:42,f(){camKm.set(storm.x+25,1000,storm.z+18);tgt.set(storm.x+25,0,storm.z+18);upV.copy(NORTH);}},
+  {name:'Raumstation',fov:50,f(){const u=(camT*9)%1500;camKm.set(storm.x-750+u,410,storm.z+620);tgt.set(storm.x,0,storm.z);upV.copy(Y);}},
+  {name:'Über den Wolken',fov:62,f(){const s=((camT*4.2)%330)-215;camKm.set(storm.x+s*.8+14,18.5,storm.z-s*.6+19);tgt.set(camKm.x+48,5,camKm.z-36);upV.copy(Y);}},
+  {name:'Sturmjäger',fov:66,f(){const rho=85-((camT*3.2)%140);camKm.set(storm.x+hunterDir.x*rho,3,storm.z+hunterDir.z*rho);
+    tgt.copy(camKm).addScaledVector(hunterDir,-10);tgt.x+=hunterDir.z*-3.5;tgt.z+=hunterDir.x*3.5;tgt.y=2.2;upV.copy(Y);}},
+  {name:'Im Auge',fov:74,f(){const a=camT*.07;camKm.set(storm.x+2,.25,storm.z+1);tgt.set(camKm.x+Math.cos(a)*10,5.6,camKm.z+Math.sin(a)*10);upV.copy(Y);}},
+  {name:'Küste',fov:66,f(){camKm.set(.0233,.0149,0);tgt.set(-.03,.006,.07);upV.copy(Y);}}
+];
+const camBtns=CAMS.map((c,i)=>{const b=document.createElement('button');b.innerHTML='<kbd>'+(i+1)+'</kbd>'+c.name;b.setAttribute('aria-pressed','false');
+  b.onclick=()=>{setRegie(false);setCam(i);};$('cams').appendChild(b);return b;});
+function setCam(i){if(i===cam&&camBtns[i].getAttribute('aria-pressed')==='true')return;cam=i;camT=0;yaw=pitch=0;zoom=1;
+  camBtns.forEach((b,k)=>b.setAttribute('aria-pressed',k===i));$('camlabel').textContent='CAM '+(i+1)+' · '+CAMS[i].name.toUpperCase();}
+function setRegie(on){regie=on;if(on){autoSpeed=true;regT=0;}$('b-regie').setAttribute('aria-pressed',on);}
+$('b-regie').onclick=()=>setRegie(!regie);
+const SPEEDS=[0,1,3,6,12,30];
+function setSpeed(v){speed=v;$('s-spd').value=SPEEDS.indexOf(v);$('o-spd').textContent=v?v+' min/s':'Pause';}
+$('s-spd').oninput=e=>{autoSpeed=false;setSpeed(SPEEDS[+e.target.value]);};
+const TOUR=[[0,10],[1,11],[2,13],[3,39],[4,13]],TOURLEN=86;
+function direct(){
+  let c=0,v=6;
+  if(storm.x<-150){let t=regT%TOURLEN;for(const[k,len]of TOUR){if(t<len){c=k;break;}t-=len;}}
+  else if(storm.x<80){c=5;v=storm.x<-64?12:3;}
+  else{c=0;v=12;}
+  if(regie)setCam(c);if(autoSpeed&&v!==speed)setSpeed(v);
+}
+const lookQ=new THREE.Quaternion(),eul=new THREE.Euler(0,0,0,'YXZ'),tmp=V();
+const here={r:0,v:0,p:1010,rainAmt:0,light:1,wx:0,wz:0,surge:0};
+function updateScene(rdt){
+  direct();
+  const C=CAMS[cam];C.f();
+  const onCoast=cam===5;
+  coast.visible=onCoast;wing.visible=cam===3;
+  // local weather at the camera
+  const cv=coverAt(camKm.x,camKm.z),r=cv.r,qx=camKm.x-storm.x,qz=camKm.z-storm.z;
+  here.r=r;here.v=windAt(r);here.p=pressAt(r);
+  const gust=1+.18*Math.sin(wall*1.3)+.1*Math.sin(wall*3.1+1);
+  here.wx=(qz/Math.max(r,.1)-.3*qx/Math.max(r,.1))*here.v;here.wz=(-qx/Math.max(r,.1)-.3*qz/Math.max(r,.1))*here.v;
+  const below=camKm.y<4;
+  here.rainAmt=below?sat(cv.c*cv.c*.55+cv.wall*.75-.05)*(.75+.25*Math.sin(wall*.7)):0;
+  here.light=below?1-.74*Math.pow(sat(cv.c*.95+cv.wall*.35),2):1;
+  here.surge=4.4*storm.I*Math.exp(-Math.pow(Math.hypot(storm.x,storm.z)/75,2));
+  // camera
+  if(onCoast)camera.position.set(camKm.x*1000,camKm.y*1000,camKm.z*1000);else camera.position.set(0,0,0);
+  camera.up.copy(upV);camera.lookAt(tmp.copy(tgt).sub(camKm).add(camera.position));
+  const turb=cam===3?sat(cv.c*.5+cv.wall)*.02:onCoast?sat(here.v/70)*.006:0;
+  const sh=calm?0:turb;
+  lookQ.setFromEuler(eul.set(-pitch+(Math.random()-.5)*sh,-yaw+(Math.random()-.5)*sh,(Math.random()-.5)*sh+(cam===3&&!calm?Math.sin(wall*.9)*.03*(1+turb*40):0)));
+  camera.quaternion.multiply(lookQ);
+  camera.fov=clamp(C.fov/zoom,4,100);camera.updateProjectionMatrix();camera.updateMatrixWorld(true);
+  U.uCam.value.copy(camKm);U.uRot.value.setFromMatrix4(camera.matrixWorld);U.uTan.value=Math.tan(camera.fov*Math.PI/360);U.uAspect.value=camera.aspect;
+  U.uStorm.value.set(storm.x,storm.z);U.uSpin.value=storm.min*Math.PI*2/240;U.uInt.value=storm.I;U.uTime.value=wall;U.uDrift.value=storm.min*.004;
+  U.uRain.value=here.rainAmt*(onCoast?3:1.2);U.uLight.value=.3+.7*here.light;
+  // light, fog, sea and palms on the coast
+  const L=here.light;amb.intensity=.3+.45*L;sunL.intensity=1*sstep(.55,1,L);
+  if(onCoast){
+    scene.fog.color.setRGB(.5*(.3+.7*L),.55*(.3+.7*L),.6*(.3+.7*L));scene.fog.density=.00025+here.rainAmt*.0042;
+    WATER.uTime.value=wall;WATER.uAmp.value=mix(WATER.uAmp.value,.35+3.3*sat(here.v/60)+here.surge*.12,Math.min(1,rdt));
+    WATER.uLevel.value=here.surge;WATER.uFogC.value.copy(scene.fog.color);WATER.uFogD.value=scene.fog.density;WATER.uLight.value=.35+.65*L;
+    const wl=Math.hypot(here.wx,here.wz)||1;WATER.uWind.value.set(here.wx/wl,here.wz/wl);
+    const k=sat(here.v/62),ax=tmp.set(here.wz/wl,0,-here.wx/wl);
+    for(const p of palms){const b=(k*1.05*gust+.03*Math.sin(wall*1.1+p.ph))*p.stiff/5;
+      p.segs.forEach((s,i)=>s.quaternion.setFromAxisAngle(ax,b*(.6+i*.25)));
+      for(const f of p.fronds){const fl=k*.35*Math.sin(wall*(9+f.ph)+f.ph*7);
+        dirV.set(mix(f.dir.x,here.wx/wl,k*.92),mix(f.dir.y,.05+fl,k*.92)+.05*Math.sin(wall*1.7+f.ph),mix(f.dir.z,here.wz/wl,k*.92)+fl*.3).normalize();
+        f.f.quaternion.setFromUnitVectors(Z,dirV);}}
+  }else{scene.fog.density=0;}
+  // rain
+  rain.position.copy(camera.position);
+  if(onCoast)updateRain(rdt,here.wx*gust,-8,here.wz*gust,here.rainAmt);
+  else if(cam===3)updateRain(rdt,hunterDir.x*110+here.wx,-8,hunterDir.z*110+here.wz,sat(here.rainAmt*1.2+cv.wall*.5)*.45);
+  else rain.visible=false;
+}
+const dirV=V(),Z=V(0,0,1);
+// look around and zoom
+const ptrs=new Map();let pinch0=0;
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY]);pinch0=0;});
+canvas.addEventListener('pointermove',e=>{const p=ptrs.get(e.pointerId);if(!p)return;
+  if(ptrs.size===1){const k=camera.fov/55*.004;yaw+=(e.clientX-p[0])*k;pitch=clamp(pitch+(e.clientY-p[1])*k,-1.5,1.5);}
+  ptrs.set(e.pointerId,[e.clientX,e.clientY]);
+  if(ptrs.size===2){const[a,b]=[...ptrs.values()],d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(pinch0)zoom=clamp(zoom*d/pinch0,.5,8);pinch0=d;}});
+const up=e=>{ptrs.delete(e.pointerId);pinch0=0;};
+canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);
+canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*Math.exp(-e.deltaY*.0012),.5,8);},{passive:false});
+
+/* ---------- sound: wind howl, rain, surf, aircraft ---------- */
+let ac=null,gWind=null,fWind=null,gRain=null,gSurf=null,gEng=null,soundOn=false;
+function initAudio(){
+  ac=new (window.AudioContext||window.webkitAudioContext)();
+  const noise=brown=>{const b=ac.createBuffer(1,ac.sampleRate*3,ac.sampleRate),d=b.getChannelData(0);let l=0;
+    for(let i=0;i<d.length;i++){const w=Math.random()*2-1;if(brown){l=(l+.03*w)/1.03;d[i]=l*3.2;}else d[i]=w*.5;}
+    const s=ac.createBufferSource();s.buffer=b;s.loop=true;s.start();return s;};
+  fWind=ac.createBiquadFilter();fWind.type='bandpass';fWind.frequency.value=300;fWind.Q.value=1.1;gWind=ac.createGain();gWind.gain.value=0;noise(false).connect(fWind).connect(gWind).connect(ac.destination);
+  const hp=ac.createBiquadFilter();hp.type='highpass';hp.frequency.value=3500;gRain=ac.createGain();gRain.gain.value=0;noise(false).connect(hp).connect(gRain).connect(ac.destination);
+  const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=160;gSurf=ac.createGain();gSurf.gain.value=0;noise(true).connect(lp).connect(gSurf).connect(ac.destination);
+  const el=ac.createBiquadFilter();el.type='lowpass';el.frequency.value=260;gEng=ac.createGain();gEng.gain.value=0;el.connect(gEng).connect(ac.destination);
+  for(const f of[82,85.5,124]){const o=ac.createOscillator();o.type='sawtooth';o.frequency.value=f;o.connect(el);o.start();}
+}
+function updateSound(){
+  if(!ac||!soundOn)return;const t=ac.currentTime,k=sat(here.v/70),air=cam<2?0:1,in3=cam===3,gust=1+.25*Math.sin(wall*1.3);
+  gWind.gain.setTargetAtTime(air*Math.min(.8,(cam===2?.06:k*k*.75*gust+(in3?.12:0))),t,.2);
+  fWind.frequency.setTargetAtTime(260+k*620*gust,t,.3);
+  gRain.gain.setTargetAtTime(air*here.rainAmt*.22,t,.2);
+  gSurf.gain.setTargetAtTime(cam===5?.25+k*.5:cam===4?.2:0,t,.3);
+  gEng.gain.setTargetAtTime(in3?.07:cam===2?.02:0,t,.2);
+}
+$('b-snd').onclick=()=>{try{if(!ac)initAudio();soundOn=!soundOn;if(soundOn)ac.resume();else ac.suspend();}catch(e){soundOn=false;}
+  $('b-snd').setAttribute('aria-pressed',soundOn);$('b-snd').textContent=soundOn?'Ton aus':'Ton an';};
+
+/* ---------- HUD ---------- */
+const chips=['TS','1','2','3','4','5'].map(n=>{const el=document.createElement('span');el.textContent=n;$('scale').appendChild(el);return el;});
+const nf=new Intl.NumberFormat('de-DE',{maximumFractionDigits:0});
+let hudT=0;
+function hud(rdt){
+  hudT-=rdt;if(hudT>0)return;hudT=.15;
+  const vm=VMAX*storm.I,cat=category(vm);
+  $('big').textContent=cat?'Kategorie '+cat:'Tropensturm';chips.forEach((c,i)=>c.classList.toggle('on',i===cat));
+  let ph;
+  if(cam<2){const h=-storm.x/20;ph=storm.x<-25?'Über dem Meer · Landgang in '+(h>=1?Math.floor(h)+' h '+String(Math.round(h%1*60)).padStart(2,'0')+' min':Math.round(h*60)+' min'):storm.x<30?'Landgang: das Auge erreicht die Küste':'Über Land: der Sturm verliert Kraft';}
+  else{const r=here.r,after=cam===5&&storm.x>0;ph=r<EYE?'Im Auge: fast windstill, blauer Himmel':r<EYE+32?(after?'Rückseite der Augenwand: der Wind hat gedreht':'Augenwand: die stärksten Winde'):r<170?'Innere Regenbänder':r<420?'Äußere Regenbänder':'Vor dem Sturm';}
+  $('phase').textContent=ph;
+  $('t-vmax').textContent=nf.format(vm*3.6)+' km/h';$('t-pc').textContent=nf.format(1010-95*storm.I)+' hPa';
+  $('t-v').textContent=nf.format(here.v*3.6)+' km/h';$('t-p').textContent=nf.format(here.p)+' hPa';$('t-r').textContent=nf.format(here.r)+' km';
+}
+function newStorm(){storm.x=START;storm.min=0;storm.I=1;regT=0;}
+$('b-go').onclick=newStorm;
+addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;
+  if(e.key>='1'&&e.key<='6'){setRegie(false);setCam(+e.key-1);}
+  else if(e.code==='Space'){e.preventDefault();newStorm();}
+  else if(e.key==='r'||e.key==='R')setRegie(!regie);});
+
+/* ---------- loop ---------- */
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+addEventListener('resize',resize);resize();
+function step(rdt){
+  wall+=rdt;camT+=rdt;regT+=rdt;
+  const dm=rdt*speed;storm.min+=dm;storm.x+=dm/3;            // 20 km/h towards the coast
+  storm.I=storm.x<10?1:Math.max(.22,Math.exp(-(storm.x-10)/160)); // landfall cuts off the warm water that feeds it
+  if(storm.x>END)newStorm();
+}
+setCam(0);
+let last=performance.now();
+function frame(now){
+  const rdt=Math.min((now-last)/1000,.05);last=now;
+  step(rdt);updateScene(rdt);updateSound();
+  renderer.render(scene,camera);hud(rdt);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.__sim={set(x,c,t){setRegie(false);autoSpeed=false;setSpeed(0);storm.x=x;storm.min=(x-START)*3;storm.I=x<10?1:Math.max(.22,Math.exp(-(x-10)/160));setCam(c);camT=t||0;}};
+})();
+</script>
+</body>
+</html>
