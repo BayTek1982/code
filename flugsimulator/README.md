@@ -62,4 +62,5 @@ Touch: Im Fenster mit dem Finger ziehen = Steuerhorn. Schubhebel und alle Knöpf
 | `js/panel.js` | Instrumente (Hauptfluganzeige, Navigation, Triebwerke) |
 | `js/model.js` | Flugzeugmodell für die Außenansicht |
 | `js/main.js` | Spielablauf, Eingabe, Kamera, Auswertung |
+| `manifest.json`, `sw.js`, `icon-*.png`, `apple-touch-icon.png` | Damit sich der Simulator am Handy wie eine App installieren lässt und offline startet |
 | `vendor/three.min.js` | 3D-Bibliothek three.js (MIT-Lizenz, siehe `vendor/three.LICENSE.txt`) |

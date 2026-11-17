@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Flugsimulator – Du bist der Pilot</title>
+<meta name="description" content="Du bist der Pilot: Cockpit-Flugsimulator mit drei Stufen, Störungen und Sound.">
+<meta name="theme-color" content="#0b0e12">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root { --ph: clamp(170px, 41vh, 330px); color-scheme: dark; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -327,5 +332,13 @@
 <script src="js/panel.js"></script>
 <script src="js/model.js"></script>
 <script src="js/main.js"></script>
+<script>
+// Hintergrunddienst nur auf der echten Webseite starten (nicht in eingebetteten Vorschauen)
+try {
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost') && window.top === window.self) {
+    addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
+} catch (e) { /* nicht erlaubt – der Simulator läuft auch ohne */ }
+</script>
 </body>
 </html>
