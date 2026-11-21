@@ -198,3 +198,15 @@ dialog::backdrop { background: rgba(5, 15, 18, 0.6); }
 @media (prefers-reduced-motion: no-preference) {
   .knopf, .schritte a { transition: background-color 0.15s, color 0.15s, border-color 0.15s; }
 }
+
+@media print {
+  body { background: #fff; }
+  .schritte, .aktionen, .weiter, .hinweisband, .ergebnis .knopf { display: none !important; }
+  .kopf { border-bottom: 2px solid var(--text); padding: 0 0 10px; }
+  .gitter { display: flex; flex-direction: column; gap: 14px; padding: 16px 0 0; max-width: none; }
+  .ergebnis { position: static; order: -1; break-inside: avoid; }
+  main { gap: 12px; }
+  .karte, .ergebnis { border-color: #999; }
+  .abrechnung tr { break-inside: avoid; }
+  .fuss { padding: 12px 0 0; }
+}
