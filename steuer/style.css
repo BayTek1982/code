@@ -125,11 +125,22 @@ main { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
   font-variant-numeric: tabular-nums;
 }
 .eingabe input { text-align: right; padding-right: 44px; }
+.eingabe input.text { text-align: left; padding-right: 12px; }
 .eingabe .einheit {
   position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
   color: var(--text-leise); font-size: 0.85rem; pointer-events: none;
 }
 .eingabe input:focus, .feld select:focus, textarea:focus { outline: 2px solid var(--akzent); outline-offset: 0; border-color: var(--akzent); }
+.liste { display: flex; flex-direction: column; gap: 12px; }
+.listenzeile {
+  display: grid; gap: 10px 14px; align-items: end;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  padding-bottom: 12px; border-bottom: 1px solid var(--linie);
+}
+.listenzeile .feld.breit { grid-column: span 2; }
+.listenzeile .feld label { font-size: 0.8rem; color: var(--text-leise); font-weight: 400; }
+.listenzeile .knopf { justify-self: start; }
+@media (max-width: 420px) { .listenzeile .feld.breit { grid-column: auto; } }
 .feld.haken { flex-direction: row; align-items: flex-start; gap: 10px; }
 .feld.haken input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--akzent); flex: none; }
 .feld.haken div { display: flex; flex-direction: column; gap: 2px; }

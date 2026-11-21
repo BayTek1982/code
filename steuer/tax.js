@@ -40,6 +40,9 @@
     sonstigeVorsorgeMax: 1900,
     entlastungAlleinerziehend: 4260,
     entlastungJeWeiteresKind: 240,
+    ausbildungsfreibetrag: 1200,
+    sparerPauschbetrag: 1000,
+    freigrenzeVeraeusserung: 1000,
   };
 
   const n = (v) => {
@@ -110,6 +113,57 @@
     return { fahrt, homeoffice, uebrige, tatsaechlich, pauschbetrag, angesetzt, pauschal: tatsaechlich <= pauschbetrag };
   }
 
+  /** Tarif mit Fünftelregelung (§ 34 EStG) für außerordentliche Einkünfte `ao`. */
+  function mitFuenftel(jahr, zvE, splitting, lohnersatz, ao) {
+    const a = Math.min(Math.max(0, ao), Math.max(0, zvE));
+    if (a <= 0) return tarif(jahr, zvE, splitting, lohnersatz);
+    const rest = zvE - a;
+    const basis = tarif(jahr, rest, splitting, lohnersatz);
+    return basis + 5 * (tarif(jahr, rest + a / 5, splitting, lohnersatz) - basis);
+  }
+
+  const liste = (v) => (Array.isArray(v) ? v.filter((z) => z && typeof z === 'object') : []);
+
+  /** Vermietung: Kosten des ganzen Hauses zählen nur mit dem vermieteten Flächenanteil. */
+  function vermietung(s) {
+    const gesamt = pos(s.vFlaecheGesamt), vermietet = pos(s.vFlaecheVermietet);
+    const anteil = gesamt > 0 && vermietet > 0 ? Math.min(1, vermietet / gesamt) : 1;
+    let voll = 0, anteilig = 0, privat = 0;
+    liste(s.vKosten).forEach((z) => {
+      if (z.art === 'voll') voll += pos(z.betrag);
+      else if (z.art === 'privat') privat += pos(z.betrag);
+      else anteilig += pos(z.betrag);
+    });
+    const miete = pos(s.vMiete), afa = pos(s.vAfa);
+    const kosten = r2(afa + voll + anteilig * anteil);
+    return { miete, afa, anteil, voll: r2(voll), anteilig: r2(anteilig * anteil), privat: r2(privat), kosten, ueberschuss: r2(miete - kosten), vorhanden: miete > 0 || kosten > 0 };
+  }
+
+  /** Private Veräußerungsgeschäfte (§ 23 EStG): Verluste mindern andere Einkünfte nicht. */
+  function veraeusserung(s) {
+    const posten = liste(s.soListe).map((z) => ({ name: z.name || '', ergebnis: r2(pos(z.erloes) - pos(z.kosten)) }));
+    const saldo = r2(posten.reduce((a, z) => a + z.ergebnis, 0));
+    const steuerpflichtig = saldo >= K.freigrenzeVeraeusserung ? saldo : 0;
+    return { posten, saldo, steuerpflichtig, verlustvortrag: saldo < 0 ? -saldo : 0, vorhanden: posten.length > 0 };
+  }
+
+  /** Kapitalerträge (Abgeltungsteuer 25 %) mit Verrechnung von Termingeschäften. */
+  function kapital(s, f) {
+    const ertraege = pos(s.kErtraege);
+    const termin = r2(pos(s.kTerminGewinne) - pos(s.kTerminVerluste));
+    const saldo = r2(ertraege + termin);
+    const steuerpflichtig = Math.max(0, saldo - K.sparerPauschbetrag * f);
+    const steuer = r2(Math.max(0, steuerpflichtig * 0.25 - pos(s.kAusland)));
+    const soliK = r2(steuer * 0.055);
+    const einbehalten = r2(pos(s.kSteuer) + pos(s.kSoli));
+    return {
+      ertraege, termin, saldo, steuerpflichtig, steuer, soli: soliK, einbehalten,
+      erstattung: r2(einbehalten - steuer - soliK),
+      verlustvortrag: saldo < 0 ? -saldo : 0,
+      vorhanden: ertraege > 0 || termin !== 0 || einbehalten > 0,
+    };
+  }
+
   /**
    * Gesamte Berechnung.
    * @param {object} s Eingaben (siehe app.js: leererZustand)
@@ -131,7 +185,10 @@
     });
     const lohnEinkuenfte = pers.reduce((a, p) => a + p.einkuenfte, 0);
     const weitere = n(s.weitereEinkuenfte);
-    const summeEinkuenfte = r2(lohnEinkuenfte + weitere);
+    const v = vermietung(s);
+    const so = veraeusserung(s);
+    const kap = kapital(s, f);
+    const summeEinkuenfte = r2(lohnEinkuenfte + weitere + v.ueberschuss + so.steuerpflichtig);
     const entlastung =
       !splitting && s.alleinerziehend && kinder > 0
         ? K.entlastungAlleinerziehend + (kinder - 1) * K.entlastungJeWeiteresKind
@@ -145,7 +202,7 @@
       const abschlag = p.krankengeld === false ? 0 : kv * 0.04;
       rvGesamt += pos(p.rvAN) + pos(p.rvAG);
       rvAG += pos(p.rvAG);
-      basisKV += kv - abschlag + pos(p.pv);
+      basisKV += Math.max(0, kv - abschlag - pos(p.agKV)) + Math.max(0, pos(p.pv) - pos(p.agPV));
       sonstVorsorge += abschlag + pos(p.av);
     });
     const altersvorsorge = r2(Math.max(0, Math.min(rvGesamt, J.rvHoechstbetrag * f) - rvAG));
@@ -164,7 +221,8 @@
     const zumutbar = zumutbareBelastung(gde, splitting, kinder);
     const agb = r2(Math.max(0, agbKosten - zumutbar));
 
-    const einkommen = r2(gde - vorsorge - sonderausgaben - agb);
+    const ausbildung = kinder > 0 ? Math.min(Math.floor(pos(s.ausbildungAuswaerts)), kinder) * K.ausbildungsfreibetrag : 0;
+    const einkommen = r2(gde - vorsorge - sonderausgaben - agb - ausbildung);
 
     // 5. Kinder: Günstigerprüfung Freibetrag ./. Kindergeld
     const anteil = splitting ? 1 : 0.5;
@@ -173,8 +231,9 @@
     const le = personen.reduce((a, p) => a + pos(p.lohnersatz), 0);
     const zvEOhne = Math.max(0, Math.floor(einkommen));
     const zvEMit = Math.max(0, Math.floor(einkommen - kfb));
-    const stOhne = tarif(jahr, zvEOhne, splitting, le);
-    const stMit = tarif(jahr, zvEMit, splitting, le);
+    const mehrjaehrig = personen.reduce((a, p) => a + pos(p.mehrjaehrig), 0);
+    const stOhne = mitFuenftel(jahr, zvEOhne, splitting, le, mehrjaehrig);
+    const stMit = mitFuenftel(jahr, zvEMit, splitting, le, mehrjaehrig);
     const freibetragGuenstiger = kinder > 0 && stOhne - stMit > kindergeld;
     const zvE = freibetragGuenstiger ? zvEMit : zvEOhne;
     const tarifSteuer = freibetragGuenstiger ? stMit : stOhne;
@@ -209,23 +268,24 @@
       kist: r2(kistGezahlt),
       vorauszahlungen: pos(s.vorauszahlungen),
     };
-    const summeGezahlt = r2(gezahlt.lohnsteuer + gezahlt.soli + gezahlt.kist + gezahlt.vorauszahlungen);
-    const summeFest = r2(est + soliFest + kistFest);
+    const summeGezahlt = r2(gezahlt.lohnsteuer + gezahlt.soli + gezahlt.kist + gezahlt.vorauszahlungen + kap.einbehalten);
+    const summeFest = r2(est + soliFest + kistFest + kap.steuer + kap.soli);
     const erstattung = r2(summeGezahlt - summeFest);
     const bruttoGesamt = pers.reduce((a, p) => a + p.brutto, 0);
 
     return {
-      jahr, splitting, kinder, pers, weitere, summeEinkuenfte, entlastung, gde,
+      jahr, splitting, kinder, pers, weitere, vermietung: v, veraeusserung: so, kapital: kap,
+      mehrjaehrig, ausbildung, summeEinkuenfte, entlastung, gde,
       altersvorsorge, krankenvorsorge, vorsorge,
       kistGezahlt, spenden, betreuung, sonderTatsaechlich, sonderausgaben,
       agbKosten, zumutbar, agb, einkommen,
       kfb, kindergeld, freibetragGuenstiger, zvE, lohnersatz: le,
       tarifSteuer, erm35a, ermaessigung, est, soli: soliFest, kist: kistFest,
       gezahlt, summeGezahlt, summeFest, erstattung,
-      durchschnittssteuersatz: zvE > 0 ? est / zvE : 0,
-      hatEingaben: bruttoGesamt > 0 || weitere !== 0,
+      durchschnittssteuersatz: zvE > 0 ? (tarifSteuer - ermaessigung) / zvE : 0,
+      hatEingaben: bruttoGesamt > 0 || weitere !== 0 || v.vorhanden || so.vorhanden || kap.vorhanden,
     };
   }
 
-  return { JAHRE, K, grundtarif, tarif, soli, zumutbareBelastung, werbungskosten, berechne, zahl: n };
+  return { JAHRE, K, grundtarif, tarif, mitFuenftel, vermietung, veraeusserung, kapital, soli, zumutbareBelastung, werbungskosten, berechne, zahl: n };
 });

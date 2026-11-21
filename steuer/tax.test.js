@@ -101,3 +101,49 @@ test('Leere Eingaben ergeben null', () => {
   assert.equal(e.erstattung, 0);
   assert.equal(e.hatEingaben, false);
 });
+
+test('Fünftelregelung senkt die Steuer auf Einmalzahlungen', () => {
+  const basis = { jahr: 2025, veranlagung: 'single' };
+  const ohne = Tax.berechne({ ...basis, p: [person({ brutto: 60000 })] });
+  const mit = Tax.berechne({ ...basis, p: [person({ brutto: 60000, mehrjaehrig: 20000 })] });
+  assert.ok(mit.est < ohne.est);
+  assert.equal(Tax.mitFuenftel(2025, 50000, false, 0, 0), Tax.grundtarif(2025, 50000));
+  assert.equal(Tax.mitFuenftel(2025, 50000, false, 0, 10000), Tax.grundtarif(2025, 40000) + 5 * (Tax.grundtarif(2025, 42000) - Tax.grundtarif(2025, 40000)));
+});
+
+test('Arbeitgeberzuschuss mindert die absetzbaren Kranken- und Pflegebeiträge', () => {
+  const e = Tax.berechne({ jahr: 2025, veranlagung: 'single', p: [person({ brutto: 90000, kv: 10000, pv: 2000, agKV: 5000, agPV: 1000 })] });
+  assert.equal(e.krankenvorsorge, 10000 * 0.96 - 5000 + 1000);
+});
+
+test('Vermietung: Hauskosten zählen nur mit dem Flächenanteil', () => {
+  const v = Tax.vermietung({
+    vMiete: 12000, vFlaecheVermietet: 50, vFlaecheGesamt: 200, vAfa: 1500,
+    vKosten: [{ betrag: 4000, art: 'anteilig' }, { betrag: 400, art: 'voll' }, { betrag: 3000, art: 'privat' }],
+  });
+  assert.equal(v.anteil, 0.25);
+  assert.equal(v.kosten, 1500 + 1000 + 400);
+  assert.equal(v.ueberschuss, 9100);
+  const e = Tax.berechne({ jahr: 2025, veranlagung: 'single', vMiete: 12000, vAfa: 1500, p: [person({ brutto: 40000 })] });
+  assert.equal(e.gde, 40000 - 1230 + 10500);
+});
+
+test('Kapital: Verluste aus Termingeschäften führen zur Erstattung der Abgeltungsteuer', () => {
+  const k = Tax.kapital({ kErtraege: 10000, kTerminGewinne: 5000, kTerminVerluste: 40000, kSteuer: 2250, kSoli: 123.75 }, 2);
+  assert.equal(k.saldo, -25000);
+  assert.equal(k.steuer, 0);
+  assert.equal(k.erstattung, 2373.75);
+  assert.equal(k.verlustvortrag, 25000);
+  const plus = Tax.kapital({ kErtraege: 10000, kAusland: 50 }, 1);
+  assert.equal(plus.steuer, 9000 * 0.25 - 50);
+});
+
+test('Veräußerungsgeschäfte: Verluste mindern das Einkommen nicht, Gewinne ab der Freigrenze zählen', () => {
+  const basis = { jahr: 2025, veranlagung: 'single', p: [person({ brutto: 50000 })] };
+  const ohne = Tax.berechne(basis);
+  const verlust = Tax.berechne({ ...basis, soListe: [{ erloes: 10000, kosten: 30000 }] });
+  assert.equal(verlust.est, ohne.est);
+  assert.equal(verlust.veraeusserung.verlustvortrag, 20000);
+  assert.equal(Tax.berechne({ ...basis, soListe: [{ erloes: 1900, kosten: 1000 }] }).est, ohne.est);
+  assert.ok(Tax.berechne({ ...basis, soListe: [{ erloes: 5000, kosten: 1000 }] }).est > ohne.est);
+});
