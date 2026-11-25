@@ -11,14 +11,25 @@
 
   const leerePerson = () => ({ krankengeld: true, kirche: false });
   const leererZustand = () => ({ jahr: 2025, veranlagung: 'single', kistSatz: 9, p: [leerePerson(), leerePerson()], beispiel: false });
+  // Erfundene Beispieldaten (Familie Mustermann), damit die App beim ersten Öffnen alle Bereiche zeigt.
   const beispielZustand = () => ({
-    jahr: 2025, veranlagung: 'single', kistSatz: 9, beispiel: true,
+    jahr: 2025, veranlagung: 'joint', kistSatz: 9, beispiel: true,
     p: [
-      { krankengeld: true, kirche: false, brutto: 48000, lohnsteuer: 7350, soli: 0, kist: 0,
-        rvAN: 4464, rvAG: 4464, kv: 4104, pv: 1104, av: 624, km: 24, tage: 180, hoTage: 40, arbeitsmittel: 320, fortbildung: 450 },
-      leerePerson(),
+      { name: 'Max', krankengeld: true, kirche: false, brutto: 62000, lohnsteuer: 9400,
+        rvAG: 5766, rvAN: 5766, kv: 5053, pv: 1116, av: 806, km: 18, tage: 200, hoTage: 30, arbeitsmittel: 250 },
+      { name: 'Erika', krankengeld: true, kirche: false, brutto: 24000, lohnsteuer: 2900,
+        rvAG: 2232, rvAN: 2232, kv: 1956, pv: 432, av: 312, km: 6, tage: 180 },
     ],
-    spenden: 150, sonstVers: 240, handwerker: 900, haushaltsnah: 380,
+    vMiete: 7200, vFlaecheVermietet: 45, vFlaecheGesamt: 180, vAfa: 1200,
+    vKosten: [
+      { name: 'Schuldzinsen', betrag: 3600, art: 'anteilig' },
+      { name: 'Gebäudeversicherung', betrag: 520, art: 'anteilig' },
+      { name: 'Grundsteuer', betrag: 380, art: 'anteilig' },
+      { name: 'Strom Mietwohnung', betrag: 300, art: 'voll' },
+    ],
+    kErtraege: 2400, kSteuer: 100, kSoli: 5.5,
+    soListe: [{ name: 'Krypto-Börse', erloes: 4200, kosten: 5000 }],
+    kinder: 2, kinderbetreuung: 1800, spenden: 150, sonstVers: 240, handwerker: 900,
   });
 
   // Schritte des Interviews. person: true = Feld gibt es je Person.
@@ -462,4 +473,9 @@
   $('btnBeispielWeg').addEventListener('click', leeren);
 
   zeichneAlles();
+
+  // Offline-Nutzung auf der eigenen Webseite; in eingebetteten Ansichten nicht verfügbar.
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
 })();
